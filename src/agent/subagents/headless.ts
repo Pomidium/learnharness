@@ -108,7 +108,7 @@ export function resolveChromeExecutablePath(): string | null {
 }
 
 const NO_CHROME_MESSAGE =
-	"No render engine available: the app's own browser helper failed to start and no system Chrome/Chromium was found. " +
+	"No render engine available: no bundled browser helper is available and no system Chrome/Chromium was found. " +
 	"Install Google Chrome or set CHROME_PATH to a Chrome executable. " +
 	"(Verification is mandatory — demos are never delivered untested.)";
 
@@ -144,6 +144,7 @@ export function browserServiceSpawnEnv(
  *  ELECTRON_RUN_AS_NODE so process.execPath IS the app binary; in dev
  *  (plain node) the electron package resolves to the dev binary path. */
 export function browserServiceBinary(): string | null {
+	if (process.env.OMNILEARN_TAURI === "1") return null;
 	if (process.versions.electron) return process.execPath;
 	try {
 		const req = createRequire(import.meta.url);
@@ -234,7 +235,7 @@ let helperPageChain: Promise<unknown> = Promise.resolve();
 async function withBrowserPage<T>(fn: (page: import("puppeteer-core").Page) => Promise<T>): Promise<T> {
 	// Helper first (owner ruling 2026-10-10: the app's own Chromium primary,
 	// system Chrome fallback) — deterministic across users, zero install.
-	const helper = await connectBrowserService();
+	const helper = process.env.OMNILEARN_TAURI === "1" ? null : await connectBrowserService();
 	if (helper) {
 		const run = async (): Promise<T> => {
 			const pages = await helper.pages();

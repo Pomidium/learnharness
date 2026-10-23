@@ -84,9 +84,8 @@ const SLOT_META: Record<ModelSlotName, { label: string; roster: string }> = {
 /** The search engines this wave ships (src/core/search.ts) + their labels. */
 const SEARCH_ENGINES = ["tavily", "brave"] as const;
 
-/** The owner's final toggleable-tool list (confirm with the user before
- *  changing — the Teacher stream settled this 2026-09-19). */
-export const TOGGLE_TOOLS = ["research", "demo", "visual", "pdf"] as const;
+/** Optional tools the learner can enable or disable independently. */
+export const TOGGLE_TOOLS = ["research", "demo", "visual", "pdf", "intelligent_ui"] as const;
 
 const THINKING_LEVELS: readonly ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 

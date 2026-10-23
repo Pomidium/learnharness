@@ -16,6 +16,7 @@ import { filterEnabledTools, type EnabledTools } from "../core/pending.ts";
 import type { JobRecord } from "../core/contracts.ts";
 import type { JobStore } from "../core/ports.ts";
 import { jobTools, type DemoInput, type PdfInput, type ResearchInput, type VisualInput } from "./tools/jobs.ts";
+import { intelligentUiTool } from "./tools/intelligent-ui.ts";
 import { planTools, type PlanToolContext } from "./tools/plan.ts";
 import { probeDoneTool, type ProbeDoneContext } from "./tools/probe.ts";
 import { proberGraphTools } from "./tools/graph.ts";
@@ -467,6 +468,7 @@ export function createTeacherTools(
 			// always took its ?? true default. Threaded now: the live signal
 			// reaches jobTools' research gate.
 			...jobTools({ chatId: ctx.chatId, jobStore: ctx.jobStore, spawn: ctx.spawn, searchAvailable: ctx.searchAvailable }),
+			intelligent_ui: intelligentUiTool,
 		},
 		withoutMechanics(enabled),
 		),

@@ -1,0 +1,53 @@
+name: Sync upstream main
+
+on:
+  schedule:
+    - cron: '17 7 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upstream-sync-main
+  cancel-in-progress: false
+
+jobs:
+  merge:
+    if: github.repository == 'Pomidium/learnharness' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Merge upstream without replacing fork history
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git remote add source https://github.com/amosblomqvist/learnharness.git
+          git fetch origin main
+          git fetch source main
+          git checkout -B main origin/main
+          if git merge-base --is-ancestor source/main HEAD; then
+            echo 'Already contains upstream main; no change.'
+            exit 0
+          fi
+          if ! git -c merge.conflictStyle=diff3 merge --no-ff --no-edit source/main; then
+            echo '::error::Upstream merge conflicts. Fork main was not changed. Merge amosblomqvist/learnharness main into a local branch based on the latest fork main, resolve conflicts, and push that branch through normal review.'
+            git merge --abort || true
+            exit 1
+          fi
+          if [[ -n "$(git status --porcelain)" ]]; then
+            echo '::error::Merge left uncommitted changes; refusing to push.'
+            exit 1
+          fi
+          # A non-force push rejects a concurrent update to fork main.
+          git -c http.extraheader="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)" push origin HEAD:refs/heads/main

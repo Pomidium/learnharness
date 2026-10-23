@@ -1,0 +1,7 @@
+# Omnilearn macOS desktop shell
+
+`npm run desktop:dist` builds the Next standalone server, compiles Tauri 2, downloads the pinned official Node v24.22.1 darwin-arm64 tarball, checks its published SHA-256, and installs an unsigned bundle at `/Applications/Omnilearn.app`. The prior Omnilearn bundle is moved to a timestamped `/Applications/Omnilearn.backup.*.app` before replacement; LearnHarness.app is untouched. No existing signing credentials are used. The Node executable links only Apple system libraries, not Homebrew libraries.
+
+The shell starts the standalone server on a loopback port and keeps data and keys in its own Application Support directory (`com.pomidium.omnilearn`). It terminates its child on exit. A Tauri command bridge, restricted to the current loopback origin and main window, implements the existing `window.lh` sidebar-expansion and zoom methods. The webview permits navigation only within its own loopback origin; external HTTP(S) and mail links open in the system handler, while other schemes are denied. New-window requests are denied after eligible links are sent to the system handler. No auto-update status is advertised because an unsigned local bundle has no working updater.
+
+JavaScript demo verification requires system Chrome/Chromium: Tauri does not bundle Chromium. The macOS native title bar is retained rather than reproducing Electron's custom draggable header. The app has not been interactively tested.

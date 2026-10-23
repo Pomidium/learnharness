@@ -64,7 +64,7 @@ export const JOB_TOOLS = ["research", "demo", "visual"] as const;
 
 /** The tools a user may toggle off in settings — THE DEFINITIVE LIST
  *  (adjudicated 2026-09-19, P2 reconciliation: the sub-agent JOB tools
- *  only — research/demo/visual/pdf). Deliberately NOT toggleable, ever:
+ *  plus the optional visual explanation — research/demo/visual/pdf/intelligent_ui). Deliberately NOT toggleable, ever:
  *  quiz + ask_user_question (the prober's flow is graded-quiz brackets →
  *  probe_done; quiz-off would collapse the assessment and teaching
  *  doctrine is built on graded verification — the wedge danger), the
@@ -76,7 +76,7 @@ export const JOB_TOOLS = ["research", "demo", "visual"] as const;
  *  lenient for forward-compat. The names are the MODEL-FACING tool names
  *  (research, not researcher; pdf is the PDF-reader dispatch, sources v0
  *  2026-09). */
-export const TOGGLEABLE_TOOLS = ["research", "demo", "visual", "pdf"] as const;
+export const TOGGLEABLE_TOOLS = ["research", "demo", "visual", "pdf", "intelligent_ui"] as const;
 
 /** The keys the settings WRITE side accepts in agent.tools: the plain
  *  toggleables PLUS the quizzing-mechanics switch (`explain: true` arms
@@ -145,6 +145,7 @@ const ACTIVITY_LABELS: Record<string, string> = {
 	research: "Dispatching research…",
 	demo: "Building a demo…",
 	visual: "Making a visual…",
+	intelligent_ui: "Composing a visual explanation…",
 	pdf: "Reading a PDF…",
 	plan_init: "Drawing up the plan…",
 	probe_done: "Concluding the assessment…",

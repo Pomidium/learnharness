@@ -51,6 +51,7 @@ const SIDEBAR_AUTOCLOSE = 928;
 
 // Module scope, guarded for SSR (the server has no navigator).
 const IS_ELECTRON = typeof navigator !== "undefined" && navigator.userAgent.includes("Electron");
+const IS_DESKTOP = IS_ELECTRON || (typeof window !== "undefined" && window.lh?.platform === "darwin");
 
 declare global {
 	interface Window {
@@ -118,7 +119,7 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
 	// Both this and the mount effect land before the first paint, so a
 	// narrow window never flashes the open sidebar on load.
 	useEffect(() => {
-		if (!IS_ELECTRON) return; // plain-browser tabs open freely
+		if (!IS_DESKTOP) return; // plain-browser tabs open freely
 		const onResize = () => setNarrow(window.innerWidth < SIDEBAR_AUTOCLOSE);
 		onResize();
 		window.addEventListener("resize", onResize);
@@ -652,9 +653,10 @@ function SessionsSidebar() {
 						<Link
 							href="/"
 							aria-label="Home"
-							className="lh-no-drag flex size-9 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50"
+							className="lh-no-drag flex items-center gap-2 rounded-md pr-2 transition-colors hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50"
 						>
-							<LhMark className="size-6" />
+							<span className="flex size-9 shrink-0 items-center justify-center"><LhMark className="size-6" /></span>
+							<span className="text-xs font-medium tracking-wide text-muted-foreground">Omnilearn</span>
 						</Link>
 					</Hint>
 					<Hint label="Close sidebar" action="toggle-sidebar">
