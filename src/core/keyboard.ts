@@ -35,6 +35,7 @@ export type KeyAction =
 	| "question-prev-row"
 	| "question-pick-row"
 	| "question-submit"
+	| "question-clarify"
 	| "open-settings"
 	| "toggle-user-thinking";
 
@@ -85,6 +86,7 @@ export const KEYBOARD_ACTIONS: readonly KeyActionDef[] = [
 	{ id: "question-prev-row", label: "Question · previous row", scope: "chat", binding: "arrowup", displayOnly: true },
 	{ id: "question-pick-row", label: "Question · pick row", scope: "chat", binding: "space", displayOnly: true },
 	{ id: "question-submit", label: "Question · submit", scope: "chat", binding: "enter", displayOnly: true },
+	{ id: "question-clarify", label: "Question · answer / clarifying question", scope: "chat", binding: "mod+shift+q" },
 ];
 
 const STORAGE_KEY = "lh:keymap";

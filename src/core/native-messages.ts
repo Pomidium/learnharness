@@ -74,7 +74,8 @@ export interface LhMarkerMessage {
 		| "practice-thinking"
 		| "practice-next"
 		| "problem-dismissed"
-		| "compaction";
+		| "compaction"
+		| "clarification";
 	/** The model-facing text ("" for plan blocks — UI-only). */
 	content: string;
 	display: boolean;
@@ -545,6 +546,15 @@ export function toLlmMessages(messages: readonly AgentMessage[]): Message[] {
 	const leading =
 		(messages[0] as { role?: string } | undefined)?.role === "system" ? (messages[0] as Message) : null;
 	const out: Message[] = [];
+	const deferredClarifications = new Map<string, LhMarkerMessage[]>();
+	const siblingCalls = new Map<string, string[]>();
+	for (const message of messages) {
+		if ((message as { role?: string }).role !== "assistant") continue;
+		const ids = (message as AssistantMessage).content
+			.filter((part) => part.type === "toolCall")
+			.map((part) => part.id);
+		for (const id of ids) siblingCalls.set(id, ids);
+	}
 	if (leading) out.push(leading);
 	if (head) out.push(head);
 	for (let i = leading ? Math.max(start, 1) : start; i < messages.length; i++) {
@@ -552,6 +562,15 @@ export function toLlmMessages(messages: readonly AgentMessage[]): Message[] {
 		const role = (m as { role?: string }).role;
 		if (role === "custom") {
 			const marker = m as LhMarkerMessage;
+			if (marker.customType === "clarification") {
+				const callId = (marker.details as { toolCallId?: unknown } | null)?.toolCallId;
+				if (typeof callId === "string") {
+					const list = deferredClarifications.get(callId) ?? [];
+					list.push(marker);
+					deferredClarifications.set(callId, list);
+				}
+				continue;
+			}
 			// UI-only markers: plan blocks, and problem dismissals (the
 			// synthesized conclude pair carries the model's face).
 			if (marker.customType === "plan-block" || marker.customType === "problem-dismissed") continue;
@@ -570,6 +589,25 @@ export function toLlmMessages(messages: readonly AgentMessage[]): Message[] {
 		// Strip the record id: the wire carries the native shape only.
 		const { id: _id, ...native } = m as LhMessage;
 		out.push(native as Message);
+		if (role === "toolResult") {
+			const callId = (m as ToolResultMessage).toolCallId;
+			const group = siblingCalls.get(callId) ?? [callId];
+			// Parallel tool results must remain adjacent to their calling assistant.
+			// Even a clarification for the first question waits until the LAST
+			// sibling result before its model-facing summary is inserted.
+			const moreResults = messages.slice(i + 1).some((later) =>
+				(later as { role?: string }).role === "toolResult" &&
+				group.includes((later as ToolResultMessage).toolCallId),
+			);
+			if (!moreResults) {
+				const ready = group.flatMap((id) => deferredClarifications.get(id) ?? [])
+					.sort((a, b) => a.timestamp - b.timestamp);
+				for (const marker of ready) {
+					out.push({ role: "user", content: [{ type: "text", text: marker.content }], timestamp: marker.timestamp });
+				}
+				for (const id of group) deferredClarifications.delete(id);
+			}
+		}
 		// Dangling-call synthesis: an assistant message whose toolCalls have
 		// no results in the remaining tail (abort mid-question) — the
 		// provider rejects unanswered calls outright.

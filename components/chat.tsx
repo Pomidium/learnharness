@@ -1358,6 +1358,17 @@ export function Chat({
 												return <CompactionMomentDivider key={pi} data={part.data as CompactionDividerData} />;
 											case "data-compaction-cut":
 												return <CompactionCutDivider key={pi} data={part.data as CompactionDividerData} />;
+											case "data-clarification": {
+												const details = part.data as { question?: string; reply?: string };
+												return (
+													<div key={pi} data-testid="clarification-card" className="my-3 rounded-lg border border-primary/30 bg-card p-4 text-sm">
+														<div className="mb-2 text-xs font-semibold uppercase tracking-wide text-primary">Clarifying question</div>
+														<p className="mb-3 whitespace-pre-wrap border-l-2 border-primary/40 pl-3">{details.question}</p>
+														<div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Teacher</div>
+														<MessageResponse>{details.reply ?? ""}</MessageResponse>
+													</div>
+												);
+											}
 											case "data-practice-thinking":
 												return <ThinkingCard key={pi} data={part.data as PracticeThinkingData} />;
 											case "data-practice-next":
@@ -1595,6 +1606,19 @@ export function Chat({
 					pending={pending}
 					practice={activeProblem}
 					compactionRunning={compacting}
+					onClarify={async (toolCallId, text) => {
+						const res = await fetch(`/api/chats/${encodeURIComponent(chatId)}/clarify`, {
+							method: "POST", headers: { "Content-Type": "application/json" },
+							body: JSON.stringify({ toolCallId, text }),
+						});
+						if (!res.ok) {
+							const body = (await res.json().catch(() => null)) as { error?: string } | null;
+							throw new Error(body?.error ?? `Clarification failed (${res.status}).`);
+						}
+						// The server already persisted the exchange. If a refresh fails,
+						// don't make the user retry a clarification that succeeded.
+						await syncFromServer().catch((error: unknown) => console.error("Clarification refresh failed:", error));
+					}}
 					onSubmitThinking={submitThinking}
 					chatId={chatId}
 					plan={hasPlan ? <PlanMarginalia messages={messages} /> : undefined}
@@ -1819,6 +1843,7 @@ function DockOverlay({
 	practice,
 	compactionRunning,
 	onSubmitThinking,
+	onClarify,
 	requiresReveal,
 	readingThinking,
 	onReadingThinking,
@@ -1845,6 +1870,7 @@ function DockOverlay({
 	practice: { toolCallId: string; input: unknown } | null;
 	/** (commit, text) — the practice dock's two submit lanes. */
 	onSubmitThinking: (text: string) => void;
+	onClarify: (toolCallId: string, text: string) => Promise<void>;
 	/** Teach-phase pending question: arrives collapsed behind the reveal button (W5). */
 	requiresReveal: boolean;
 	/** The reading-thinking draft (owner 2026-10-03) — owned by ChatView so
@@ -2300,6 +2326,7 @@ function DockOverlay({
 									phase={phase}
 									onExpand={expandAndReveal}
 									onSubmit={onSubmitAnswer}
+									onClarify={onClarify}
 									onEscape={dictationCancel}
 									dictationClaim={!revealPending}
 									compactionRunning={compactionRunning}

@@ -9,6 +9,9 @@ import { MessageResponse } from "@/components/ai-elements/message";
 import { cn } from "@/lib/utils";
 import {
 	buildAnswer,
+	bindingForAction,
+	formatBinding,
+	kbdEventForAction,
 	normalizeQuizType,
 	CONFIDENCE_STOPS,
 	DEFAULT_CONFIDENCE_INDEX,
@@ -71,6 +74,7 @@ export interface QuestionDockProps {
 	reveal?: boolean;
 	onExpand: () => void;
 	onSubmit: (output: QuestionAnswerData) => void;
+	onClarify?: (toolCallId: string, text: string) => Promise<void>;
 	/** Escape in a question field stops dictation (STT wave) — threaded
 	 *  from the page that owns the dictation hook. */
 	onEscape?: () => void;
@@ -100,6 +104,7 @@ export function QuestionDock({
 	reveal = false,
 	onExpand,
 	onSubmit,
+	onClarify,
 	onEscape,
 	phase = "probe",
 	dictationClaim = true,
@@ -154,7 +159,9 @@ export function QuestionDock({
 					input={parsed}
 					phase={phase}
 					active={expanded}
+					onExpand={onExpand}
 					onSubmit={onSubmit}
+					onClarify={onClarify}
 					onEscape={onEscape}
 					dictationClaim={dictationClaim}
 					compactionRunning={compactionRunning}
@@ -249,11 +256,13 @@ function QuestionDockForm({
 	input,
 	phase = "probe",
 	active,
+	onExpand,
 	onSubmit,
+	onClarify,
 	onEscape,
 	dictationClaim = true,
 	compactionRunning = false,
-}: Omit<QuestionDockProps, "expanded" | "onExpand" | "reveal">) {
+}: Omit<QuestionDockProps, "expanded" | "reveal">) {
 	const kind = toolQuestionKind(toolName);
 
 	// Canonical QuestionData, built once per question. Quiz options are
@@ -316,6 +325,38 @@ function QuestionDockForm({
 	const [thinking, setThinking] = useState("");
 	const [other, setOther] = useState("");
 	const [text, setText] = useState("");
+	const [clarifying, setClarifying] = useState(false);
+	const [clarification, setClarification] = useState("");
+	const clarificationRef = useRef("");
+	const clarificationSubmittingRef = useRef(false);
+	const [clarifyBusy, setClarifyBusy] = useState(false);
+	const [clarifyError, setClarifyError] = useState<string | null>(null);
+	useEffect(() => {
+		const toggle = () => {
+			if (clarifyBusy) return;
+			if (!active) onExpand();
+			setClarifying((value) => !value);
+		};
+		window.addEventListener(kbdEventForAction("question-clarify"), toggle);
+		return () => window.removeEventListener(kbdEventForAction("question-clarify"), toggle);
+	}, [active, clarifyBusy, onExpand]);
+	const submitClarification = async () => {
+		const question = clarificationRef.current.trim();
+		if (!question || clarifyBusy) return;
+		setClarifyBusy(true);
+		setClarifyError(null);
+		try {
+			if (!onClarify) throw new Error("Clarification is unavailable.");
+			await onClarify(toolCallId, question);
+			clarificationRef.current = "";
+			setClarification("");
+			setClarifying(false);
+		} catch (error) {
+			setClarifyError(error instanceof Error ? error.message : "Clarification failed.");
+		} finally {
+			setClarifyBusy(false);
+		}
+	};
 	/* Refs MIRROR the two dictation-target fields ("nothing gets lost"
 	 * round, owner 2026-10-01): the run's flush lands via setState, which
 	 * a closure waiting through `await finishDictation()` cannot observe
@@ -340,7 +381,10 @@ function QuestionDockForm({
 				// Ref-first (see the refs block above): the join is computed from
 				// the mirror, then both mirrors agree with state — a submit
 				// resuming post-finish reads the tail, never a stale closure.
-				if (qd.mode === "text") {
+				if (clarifying) {
+					clarificationRef.current = joinDictation(clarificationRef.current, t);
+					setClarification(clarificationRef.current);
+				} else if (qd.mode === "text") {
 					const v = joinDictation(answerTextRef.current, t);
 					answerTextRef.current = v;
 					setText(v);
@@ -350,7 +394,7 @@ function QuestionDockForm({
 					setThinking(v);
 				}
 			},
-			[qd.mode],
+			[qd.mode, clarifying],
 		),
 		// Released while a teach check sits unrevealed (owner 2026-10-03):
 		// the reading-thinking field owns dictated speech during the reading.
@@ -365,6 +409,15 @@ function QuestionDockForm({
 			: sel.dontKnow || (sel.otherSelected && other.trim().length > 0) || sel.selected.size > 0;
 
 	const submit = () => {
+		if (clarifying) {
+			if (clarificationSubmittingRef.current || compactionRunning) return;
+			clarificationSubmittingRef.current = true;
+			void finishDictation()
+				.then(submitClarification)
+				.catch((error: unknown) => setClarifyError(error instanceof Error ? error.message : "Dictation could not finish."))
+				.finally(() => { clarificationSubmittingRef.current = false; });
+			return;
+		}
 		if (!canSubmit || compactionRunning) return;
 		/* FINISH DICTATION FIRST (owner, 2026-10-01): Enter may arrive while
 		 * a run is live with reasoning still in Deepgram's hands. Stop the
@@ -379,7 +432,7 @@ function QuestionDockForm({
 		void finishDictation().then(doSubmit);
 	};
 	const doSubmit = () => {
-		if (!canSubmit) return;
+		if (clarifying || !canSubmit) return;
 		const req: AnswerRequest = {
 			dontKnow: sel.dontKnow,
 			values: [...sel.selected].map((i) => qd.options[i]!.value),
@@ -460,6 +513,7 @@ function QuestionDockForm({
 	useEffect(() => {
 		if (!active || rowCount === 0) return;
 		const onKeyDown = (e: KeyboardEvent) => {
+			if (clarifying) return;
 			const t = e.target as HTMLElement | null;
 			// A TYPING field is where keys mean text (owner round 4): the
 			// thinking/answer fields, search boxes, renames — never a range
@@ -568,7 +622,7 @@ function QuestionDockForm({
 					</div>
 				)}
 
-				{qd.mode !== "text" && (
+				{qd.mode !== "text" && !clarifying && (
 					<div className="flex flex-col gap-2 pb-2" role={qd.mode === "multi-select" ? "group" : "radiogroup"}>
 						{qd.options.map((opt, i) => {
 							const isSel = sel.selected.has(i);
@@ -733,7 +787,7 @@ function QuestionDockForm({
 				app-wide). Clicking and dragging are native. "I don't know"
 				GRAYS it out — the layout holds, no value is sent, the IDK
 				signal stands alone. */}
-			{kind === "quiz" && (
+			{kind === "quiz" && !clarifying && (
 				<div className="border-t border-border/60 px-4 py-2.5">
 					<div className="flex items-center gap-3">
 						<span
@@ -823,14 +877,44 @@ function QuestionDockForm({
 					submit();
 				}}
 			>
+				<div className="flex items-center gap-2 px-2 pb-1 text-xs">
+					<button type="button" disabled={clarifyBusy} aria-pressed={!clarifying} onClick={() => setClarifying(false)} className={cn("rounded px-2 py-1", !clarifying && "bg-accent font-semibold")}>Answer</button>
+					<button type="button" disabled={clarifyBusy} aria-pressed={clarifying} onClick={() => setClarifying(true)} className={cn("rounded px-2 py-1", clarifying && "bg-primary/15 font-semibold text-primary")}>Clarifying question</button>
+					<span className="text-muted-foreground">{formatBinding(bindingForAction("question-clarify"))}</span>
+				</div>
 				<div
-					data-testid={qd.mode === "text" ? "answer-field" : "thinking-field"}
-					className="rounded-[10px] border border-border/70 bg-background/60 transition-colors focus-within:border-primary/50"
+					data-testid={clarifying ? "clarification-field" : qd.mode === "text" ? "answer-field" : "thinking-field"}
+					className={cn(
+						"rounded-[10px] border transition-colors focus-within:border-primary/50",
+						clarifying ? "border-primary/70 bg-primary/5" : "border-border/70 bg-background/60",
+					)}
 				>
-					<div className="px-2.5 pt-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-						{qd.mode === "text" ? "Your answer" : "YOUR THINKING"}
+					<div className={cn("px-2.5 pt-2 text-xs font-medium uppercase tracking-wide", clarifying ? "text-primary" : "text-muted-foreground")}>
+						{clarifying ? "CLARIFYING QUESTION — NOT YOUR ANSWER" : qd.mode === "text" ? "Your answer" : "YOUR THINKING"}
 					</div>
-					{qd.mode === "text" ? (
+					{clarifying ? (
+						<textarea
+							autoFocus
+							value={clarification}
+							onChange={(e) => {
+								clarificationRef.current = e.target.value;
+								setClarification(e.target.value);
+							}}
+							onKeyDown={(e) => {
+								if (e.key === "Escape" && onEscape) {
+									e.preventDefault();
+									e.stopPropagation();
+									onEscape();
+								} else if (e.key === "Enter" && (!e.shiftKey || e.metaKey || e.ctrlKey)) {
+									e.preventDefault();
+									submit();
+								}
+							}}
+							placeholder="Ask about a concept, not for the answer or a hint…"
+							rows={2}
+							className="field-sizing-content lh-input min-h-16 max-h-48 w-full resize-none bg-transparent px-2.5 py-2 outline-none"
+						/>
+					) : qd.mode === "text" ? (
 						<textarea
 							value={text}
 							onChange={(e) => {
@@ -896,17 +980,18 @@ function QuestionDockForm({
 					)}
 					<div className="flex items-center justify-between gap-2 p-1">
 						<span aria-hidden className="pl-1.5 text-xs text-muted-foreground">
-								{compactionRunning ? "compacting session…" : "↵ submits · ⇧↵ newline"}
+								{clarifying ? clarifyBusy ? "Asking teacher…" : "Ask for clarification · answer draft stays here" : compactionRunning ? "compacting session…" : "↵ submits · ⇧↵ newline"}
 						</span>
 						<Button
 							type="submit"
-							disabled={!canSubmit || compactionRunning}
+							disabled={clarifying ? !clarification.trim() || clarifyBusy : !canSubmit || compactionRunning}
 							className="ml-auto h-9 rounded-[6px] px-3.5 text-sm font-medium"
 						>
-							Submit answer
+							{clarifying ? (clarifyBusy ? "Asking…" : "Ask teacher") : "Submit answer"}
 						</Button>
 					</div>
 				</div>
+				{clarifyError && <p role="alert" className="px-2 py-1 text-xs text-destructive">{clarifyError}</p>}
 			</form>
 		</div>
 	);

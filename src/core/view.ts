@@ -344,6 +344,10 @@ function applyResultTo(part: LhViewPart | undefined, result: ToolResultMessage):
 /** A marker's projected message (handoff/steers) or splice (plan block). */
 function projectMarker(marker: LhMarkerMessage, out: LhViewMessage[]): void {
 	switch (marker.customType) {
+		case "clarification": {
+			out.push({ id: marker.id, role: "user", parts: [{ type: "data-clarification", id: `cl_${marker.id}`, data: marker.details }] });
+			return;
+		}
 		case "graph-context": {
 			// The session's map context (owner, 2026-10-04): user-side —
 			// a minimal collapsible card ABOVE the first user message;
